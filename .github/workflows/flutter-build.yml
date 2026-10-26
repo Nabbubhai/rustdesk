@@ -1,4 +1,4 @@
-name: Build JSAW Remote Support
+name: Build JSAW Remote Support (Windows x86_64)
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
       target_version: Windows10
 
   build-windows-x86_64:
-    name: Build JSAW Remote Support Standalone
+    name: Build JSAW Standalone Windows x86_64
     needs: [build-RustDeskTempTopMostWindow, generate-bridge]
     runs-on: windows-2022
     steps:
@@ -47,6 +47,26 @@ jobs:
         with:
           name: bridge-artifact
           path: ./
+
+      # --- AUTOMATIC SUBMODULE PATCH: INJECT JSAW SERVER & KEY ---
+      - name: Hardcode JSAW Server and Key into Core Config
+        shell: bash
+        run: |
+          python3 -c '
+          import re
+          path = "libs/hbb_common/src/config.rs"
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          # Inject nrs.jindalsaw.com
+          content = re.sub(r"pub const RENDEZVOUS_SERVERS:.*?\];", "pub const RENDEZVOUS_SERVERS: &\x27static [&\x27static str] = &[\"nrs.jindalsaw.com\"];", content, flags=re.DOTALL)
+          # Inject Public Key
+          content = re.sub(r"pub const RS_PUB_KEY:.*?;", "pub const RS_PUB_KEY: &\x27static str = \"2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=\";", content, flags=re.DOTALL)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+          print("SUCCESS: Injected nrs.jindalsaw.com and RS_PUB_KEY into libs/hbb_common/src/config.rs")
+          '
 
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
@@ -132,5 +152,5 @@ jobs:
       - name: Upload Clean Standalone EXE
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: JSAW-Remote-Support-Windows
+          name: JSAW-Remote-Support-Windows-x86_64
           path: ./SignOutput/JSAW-Remote-Support.exe
