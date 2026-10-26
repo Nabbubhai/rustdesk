@@ -3021,7 +3021,7 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
-  final name = bind.mainGetAppNameSync();
+  const name = 'JSAW Remote Support';
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
       return name;
@@ -3731,27 +3731,7 @@ Color? disabledTextColor(BuildContext context, bool enabled) {
 }
 
 Widget loadPowered(BuildContext context) {
-  if (bind.mainGetBuildinOption(key: "hide-powered-by-me") == 'Y') {
-    return SizedBox.shrink();
-  }
-  return MouseRegion(
-    cursor: SystemMouseCursors.click,
-    child: GestureDetector(
-      onTap: () {
-        launchUrl(Uri.parse('https://rustdesk.com'));
-      },
-      child: Opacity(
-          opacity: 0.5,
-          child: Text(
-            translate("powered_by_me"),
-            overflow: TextOverflow.clip,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(fontSize: 9, decoration: TextDecoration.underline),
-          )),
-    ),
-  ).marginOnly(top: 6);
+  return SizedBox.shrink();
 }
 
 const _kDefaultLogoAsset = 'assets/logo.png';
@@ -4184,13 +4164,7 @@ List<String> getPrinterNames() {
   }
 }
 
-String _appName = '';
-String get appName {
-  if (_appName.isEmpty) {
-    _appName = bind.mainGetAppNameSync();
-  }
-  return _appName;
-}
+String get appName => 'JSAW Remote Support';
 
 String getConnectionText(bool secure, bool direct, String streamType) {
   String connectionText;
