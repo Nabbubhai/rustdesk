@@ -1,4 +1,4 @@
-name: Build JSAW Remote Support (Windows x86_64 Only)
+name: Build JSAW Remote Support
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         default: true
 
 env:
-  RENDEZVOUS_SERVER: "103.51.116.6"
+  RENDEZVOUS_SERVER: "nrs.jindalsaw.com"
   RS_PUB_KEY: "2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg="
   SCITER_RUST_VERSION: "1.75"
   RUST_VERSION: "1.75"
@@ -33,17 +33,10 @@ jobs:
       target_version: Windows10
 
   build-windows-x86_64:
-    name: Build JSAW Standalone Windows x86_64
+    name: Build JSAW Remote Support Standalone
     needs: [build-RustDeskTempTopMostWindow, generate-bridge]
     runs-on: windows-2022
     steps:
-      - name: Export GitHub Actions cache environment variables
-        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
       - name: Checkout source code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -61,7 +54,6 @@ jobs:
           version: ${{ env.LLVM_VERSION }}
 
       - name: Install flutter
-        id: flutter
         uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
         with:
           channel: "stable"
@@ -70,7 +62,6 @@ jobs:
 
       - name: Replace engine with rustdesk custom flutter engine
         run: |
-          flutter doctor -v
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
@@ -94,7 +85,7 @@ jobs:
         with:
           prefix-key: windows-2022
 
-      - name: Setup vcpkg with Github Actions binary cache
+      - name: Setup vcpkg
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
         with:
           vcpkgDirectory: C:\vcpkg
@@ -109,18 +100,12 @@ jobs:
         shell: bash
 
       - name: Build rustdesk binary
+        env:
+          RENDEZVOUS_SERVER: "nrs.jindalsaw.com"
+          RS_PUB_KEY: "2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg="
         run: |
-          # 1. Write the custom configuration
-          Set-Content -Path .\custom.txt -Value "host=103.51.116.6,key=2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=" -NoNewline
-
-          # 2. Build Flutter release
           python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
           mv ./flutter/build/windows/x64/runner/Release ./rustdesk
-
-          # 3. Copy custom.txt into payload
-          Copy-Item .\custom.txt -Destination .\rustdesk\custom.txt
-
-          # 4. Driver dependencies
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
           Expand-Archive usbmmidd_v2.zip -DestinationPath .
           Remove-Item -Path usbmmidd_v2\Win32 -Recurse
@@ -137,12 +122,9 @@ jobs:
         shell: bash
         run: |
           sed -i '/dpiAware/d' res/manifest.xml
-          # Ensure custom.txt exists in root, rustdesk, and portable packer folder
-          echo -n "host=103.51.116.6,key=2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=" > ./rustdesk/custom.txt
-          echo -n "host=103.51.116.6,key=2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=" > ./libs/portable/custom.txt
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe --custom custom.txt || python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./SignOutput
           mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/JSAW-Remote-Support.exe
@@ -150,5 +132,5 @@ jobs:
       - name: Upload Clean Standalone EXE
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: JSAW-Remote-Support-Windows-x86_64
+          name: JSAW-Remote-Support-Windows
           path: ./SignOutput/JSAW-Remote-Support.exe
