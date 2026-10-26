@@ -3799,7 +3799,19 @@ class _LogoState extends State<_Logo> {
 }
 
 // max 300 x 60
-Widget loadLogo() => const _Logo();
+Widget loadLogo() {
+  return Container(
+    margin: const EdgeInsets.only(left: 14, top: 12, bottom: 8),
+    child: const Text(
+      'JSAW Remote Support',
+      style: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 0.5,
+      ),
+    ),
+  );
+}
 
 Widget loadIcon(double size) {
   return Image.asset('assets/icon.png',
