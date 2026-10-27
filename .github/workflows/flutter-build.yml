@@ -53,19 +53,44 @@ jobs:
         shell: bash
         run: |
           python3 -c '
-          import re
-          path = "libs/hbb_common/src/config.rs"
-          with open(path, "r", encoding="utf-8") as f:
-              content = f.read()
+          import os, re
 
-          # Inject nrs.jindalsaw.com
-          content = re.sub(r"pub const RENDEZVOUS_SERVERS:.*?\];", "pub const RENDEZVOUS_SERVERS: &\x27static [&\x27static str] = &[\"nrs.jindalsaw.com\"];", content, flags=re.DOTALL)
-          # Inject Public Key
-          content = re.sub(r"pub const RS_PUB_KEY:.*?;", "pub const RS_PUB_KEY: &\x27static str = \"2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=\";", content, flags=re.DOTALL)
+          targets = [
+              "libs/hbb_common/src/config.rs",
+              "src/common.rs",
+              "libs/base/src/config/mod.rs"
+          ]
 
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(content)
-          print("SUCCESS: Injected nrs.jindalsaw.com and RS_PUB_KEY into libs/hbb_common/src/config.rs")
+          patched = False
+          for path in targets:
+              if os.path.exists(path):
+                  with open(path, "r", encoding="utf-8") as f:
+                      content = f.read()
+
+                  orig = content
+                  # Replace Rendezvous Servers
+                  content = re.sub(
+                      r"pub const RENDEZVOUS_SERVERS:.*?\];",
+                      "pub const RENDEZVOUS_SERVERS: &\x27static [&\x27static str] = &[\"nrs.jindalsaw.com\"];",
+                      content,
+                      flags=re.DOTALL
+                  )
+                  # Replace Public Key
+                  content = re.sub(
+                      r"pub const RS_PUB_KEY:.*?;",
+                      "pub const RS_PUB_KEY: &\x27static str = \"2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=\";",
+                      content,
+                      flags=re.DOTALL
+                  )
+
+                  if content != orig:
+                      with open(path, "w", encoding="utf-8") as f:
+                          f.write(content)
+                      print(f"SUCCESS: Injected nrs.jindalsaw.com and key into {path}")
+                      patched = True
+
+          if not patched:
+              print("NOTE: Submodule config handled via custom.txt and Flutter server_model.dart")
           '
 
       - name: Install LLVM and Clang
@@ -126,6 +151,10 @@ jobs:
         run: |
           python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
           mv ./flutter/build/windows/x64/runner/Release ./rustdesk
+          
+          # Inject custom.txt directly inside the portable payload directory
+          Set-Content -Path .\rustdesk\custom.txt -Value "host=nrs.jindalsaw.com,key=2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=" -NoNewline
+
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
           Expand-Archive usbmmidd_v2.zip -DestinationPath .
           Remove-Item -Path usbmmidd_v2\Win32 -Recurse
