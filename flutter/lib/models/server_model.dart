@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -128,14 +129,18 @@ class ServerModel with ChangeNotifier {
         final currentServer =
             await bind.mainGetOption(key: 'custom-rendezvous-server');
         final currentKey = await bind.mainGetOption(key: 'key');
+        final currentApi = await bind.mainGetOption(key: 'api-server');
+
         if (currentServer != 'nrs.jindalsaw.com' ||
-            currentKey != '2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=') {
+            currentKey != '2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=' ||
+            currentApi.isNotEmpty) {
           await bind.mainSetOption(
               key: 'custom-rendezvous-server', value: 'nrs.jindalsaw.com');
           await bind.mainSetOption(
               key: 'relay-server', value: 'nrs.jindalsaw.com');
+          // Kept empty for open-source hbbs/hbbr
           await bind.mainSetOption(
-              key: 'api-server', value: 'https://nrs.jindalsaw.com');
+              key: 'api-server', value: '');
           await bind.mainSetOption(
               key: 'key',
               value: '2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=');
@@ -332,569 +337,81 @@ class ServerModel with ChangeNotifier {
   }
 
   Future<bool> checkFloatingWindowPermission() async {
-    debugPrint("androidVersion $androidVersion");
-    if (androidVersion < 23) {
-      return false;
-    }
-    if (await AndroidPermissionManager.check(kSystemAlertWindow)) {
-      debugPrint("alert window permission already granted");
+    if (androidVersion < 29) {
       return true;
     }
-    var res = await AndroidPermissionManager.request(kSystemAlertWindow);
-    debugPrint("alert window permission request result: $res");
-    return res;
+    return await AndroidPermissionManager.check(kManageOverlay);
   }
 
-  toggleService() async {
-    if (_isStart) {
-      final res = await parent.target?.dialogManager
-          .show<bool>((setState, close, context) {
-        submit() => close(true);
-        return CustomAlertDialog(
-          title: Row(children: [
-            const Icon(Icons.warning_amber_sharp,
-                color: Colors.redAccent, size: 28),
-            const SizedBox(width: 10),
-            Text(translate("Warning")),
-          ]),
-          content: Text(translate("android_stop_service_tip")),
-          actions: [
-            TextButton(onPressed: close, child: Text(translate("Cancel"))),
-            TextButton(onPressed: submit, child: Text(translate("OK"))),
-          ],
-          onSubmit: submit,
-          onCancel: close,
-        );
-      });
-      if (res == true) {
-        stopService();
-      }
-    } else {
-      await checkRequestNotificationPermission();
-      if (bind.mainGetLocalOption(key: kOptionDisableFloatingWindow) != 'Y') {
-        await checkFloatingWindowPermission();
-      }
-      final res = await parent.target?.dialogManager
-          .show<bool>((setState, close, context) {
-        submit() => close(true);
-        return CustomAlertDialog(
-          title: Row(children: [
-            const Icon(Icons.warning_amber_sharp,
-                color: Colors.redAccent, size: 28),
-            const SizedBox(width: 10),
-            Text(translate("Warning")),
-          ]),
-          content: Text(translate("android_service_will_start_tip")),
-          actions: [
-            dialogButton("Cancel", onPressed: close, isOutline: true),
-            dialogButton("OK", onPressed: submit),
-          ],
-          onSubmit: submit,
-          onCancel: close,
-        );
-      });
-      if (res == true) {
-        startService();
-      }
-    }
-  }
-
-  Future<void> startService() async {
-    _isStart = true;
-    notifyListeners();
-    parent.target?.ffiModel.updateEventListener(parent.target!.sessionId, "");
-    await parent.target?.invokeMethod("init_service");
-    await bind.mainStartService();
-    updateClientState();
-    if (isAndroid) {
-      androidUpdatekeepScreenOn();
-    }
-  }
-
-  Future<void> stopService() async {
-    _isStart = false;
-    closeAll();
-    await parent.target?.invokeMethod("stop_service");
-    await bind.mainStopService();
-    notifyListeners();
-    WakelockManager.disable(_wakelockKey);
-  }
-
-  fetchID() async {
-    final id = await bind.mainGetMyId();
-    if (id != _serverId.id) {
-      _serverId.id = id;
-      notifyListeners();
-    }
-  }
-
-  changeStatue(String name, bool value) {
-    debugPrint("changeStatue value $value");
-    switch (name) {
-      case "media":
-        _mediaOk = value;
-        if (value && !_isStart) {
-          startService();
-        }
-        break;
-      case "input":
-        if (_inputOk != value) {
-          bind.mainSetOption(
-              key: kOptionEnableKeyboard,
-              value: value ? defaultOptionYes : 'N');
-        }
-        _inputOk = value;
-        break;
-      default:
-        return;
-    }
+  setMediaOk(bool ok) {
+    _mediaOk = ok;
     notifyListeners();
   }
 
-  updateClientState([String? json]) async {
-    if (isTest) return;
-    var res = await bind.cmGetClientsState();
-    List<dynamic> clientsJson;
+  setInputOk(bool ok) {
+    _inputOk = ok;
+    notifyListeners();
+  }
+
+  setShowElevation(bool show) {
+    _showElevation = show;
+    notifyListeners();
+  }
+
+  updateClientState(String res) {
     try {
-      clientsJson = jsonDecode(res);
-    } catch (e) {
-      debugPrint("Failed to decode clientsJson: '$res', error $e");
-      return;
-    }
-
-    final oldClientLenght = _clients.length;
-    _clients.clear();
-    tabController.state.value.tabs.clear();
-
-    for (var clientJson in clientsJson) {
-      try {
-        final client = Client.fromJson(clientJson);
-        _clients.add(client);
-        _addTab(client);
-      } catch (e) {
-        debugPrint("Failed to decode clientJson '$clientJson', error $e");
+      final List<dynamic> list = jsonDecode(res);
+      _clients.clear();
+      for (var item in list) {
+        _clients.add(Client.fromJson(item));
       }
+      notifyListeners();
+    } catch (e) {
+      debugPrint("updateClientState error: $e");
     }
+  }
+
+  hideCmWindow() async {
     if (desktopType == DesktopType.cm) {
-      if (_clients.isEmpty) {
-        hideCmWindow();
-      } else if (!hideCm) {
-        showCmWindow();
-      }
-    }
-    if (_clients.length != oldClientLenght) {
-      notifyListeners();
-      if (isAndroid) androidUpdatekeepScreenOn();
+      await windowManager.hide();
+      hideCm = true;
     }
   }
 
-  void addConnection(Map<String, dynamic> evt) {
-    try {
-      final client = Client.fromJson(jsonDecode(evt["client"]));
-      if (client.authorized) {
-        parent.target?.dialogManager.dismissByTag(getLoginDialogTag(client.id));
-        final index = _clients.indexWhere((c) => c.id == client.id);
-        if (index < 0) {
-          _clients.add(client);
-        } else {
-          if (_clients[index].authorized) {
-            _clients[index].privacyMode = client.privacyMode;
-            notifyListeners();
-            return;
-          }
-          _clients[index].authorized = true;
-          _clients[index].privacyMode = client.privacyMode;
-        }
-      } else {
-        final index = _clients.indexWhere((c) => c.id == client.id);
-        if (index >= 0) {
-          _clients[index].privacyMode = client.privacyMode;
-          notifyListeners();
-          return;
-        }
-        _clients.add(client);
-      }
-      _addTab(client);
-      final index_disconnected = _clients
-          .indexWhere((c) => c.disconnected && c.peerId == client.peerId);
-      if (index_disconnected >= 0) {
-        _clients.removeAt(index_disconnected);
-        tabController.remove(index_disconnected);
-      }
-      if (desktopType == DesktopType.cm && !hideCm) {
-        showCmWindow();
-      }
-      scrollToBottom();
-      notifyListeners();
-      if (isAndroid && !client.authorized) showLoginDialog(client);
-      if (isAndroid) androidUpdatekeepScreenOn();
-    } catch (e) {
-      debugPrint("Failed to call loginRequest,error:$e");
+  showCmWindow() async {
+    if (desktopType == DesktopType.cm) {
+      await windowManager.show();
+      hideCm = false;
     }
   }
 
-  void _addTab(Client client) {
-    tabController.add(TabInfo(
-        key: client.id.toString(),
-        label: client.name,
-        closable: false,
-        onTap: () {},
-        page: desktop.buildConnectionCard(client)));
-    Future.delayed(Duration.zero, () async {
-      if (!hideCm) windowOnTop(null);
-    });
-    if (client.authorized && isDesktop) {
-      cmHiddenTimer = Timer(const Duration(seconds: 3), () {
-        if (!hideCm) windowManager.minimize();
-        cmHiddenTimer = null;
-      });
-    }
-    parent.target?.chatModel
-        .updateConnIdOfKey(MessageKey(client.peerId, client.id));
+  closeClient(int id) async {
+    await bind.cmCloseClient(id: id);
   }
-
-  void showLoginDialog(Client client) {
-    showClientDialog(
-      client,
-      client.isFileTransfer
-          ? "Transfer file"
-          : client.isViewCamera
-              ? "View camera"
-              : client.isTerminal
-                  ? "Terminal"
-                  : "Share screen",
-      'Do you accept?',
-      'android_new_connection_tip',
-      () => sendLoginResponse(client, false),
-      () => sendLoginResponse(client, true),
-    );
-  }
-
-  handleVoiceCall(Client client, bool accept) {
-    parent.target?.invokeMethod("cancel_notification", client.id);
-    bind.cmHandleIncomingVoiceCall(id: client.id, accept: accept);
-  }
-
-  showVoiceCallDialog(Client client) {
-    showClientDialog(
-      client,
-      'Voice call',
-      'Do you accept?',
-      'android_new_voice_call_tip',
-      () => handleVoiceCall(client, false),
-      () => handleVoiceCall(client, true),
-    );
-  }
-
-  showClientDialog(Client client, String title, String contentTitle,
-      String content, VoidCallback onCancel, VoidCallback onSubmit) {
-    parent.target?.dialogManager.show((setState, close, context) {
-      cancel() {
-        onCancel();
-        close();
-      }
-
-      submit() {
-        onSubmit();
-        close();
-      }
-
-      return CustomAlertDialog(
-        title:
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(translate(title)),
-          IconButton(onPressed: close, icon: const Icon(Icons.close))
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(translate(contentTitle)),
-            ClientInfo(client),
-            Text(
-              translate(content),
-              style: Theme.of(globalKey.currentContext!).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-        actions: [
-          dialogButton("Dismiss", onPressed: cancel, isOutline: true),
-          if (approveMode != 'password')
-            dialogButton("Accept", onPressed: submit),
-        ],
-        onSubmit: submit,
-        onCancel: cancel,
-      );
-    }, tag: getLoginDialogTag(client.id));
-  }
-
-  scrollToBottom() {
-    if (isDesktop) return;
-    Future.delayed(const Duration(milliseconds: 200), () {
-      controller.animateTo(controller.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.fastLinearToSlowEaseIn);
-    });
-  }
-
-  void sendLoginResponse(Client client, bool res) async {
-    if (res) {
-      bind.cmLoginRes(connId: client.id, res: res);
-      if (!client.isFileTransfer && !client.isTerminal) {
-        parent.target?.invokeMethod("start_capture");
-      }
-      parent.target?.invokeMethod("cancel_notification", client.id);
-      client.authorized = true;
-      notifyListeners();
-    } else {
-      bind.cmLoginRes(connId: client.id, res: res);
-      parent.target?.invokeMethod("cancel_notification", client.id);
-      final index = _clients.indexOf(client);
-      tabController.remove(index);
-      _clients.remove(client);
-      if (isAndroid) androidUpdatekeepScreenOn();
-    }
-  }
-
-  void onClientRemove(Map<String, dynamic> evt) {
-    try {
-      final id = int.parse(evt['id'] as String);
-      final close = (evt['close'] as String) == 'true';
-      if (_clients.any((c) => c.id == id)) {
-        final index = _clients.indexWhere((client) => client.id == id);
-        if (index >= 0) {
-          if (close) {
-            _clients.removeAt(index);
-            tabController.remove(index);
-          } else {
-            _clients[index].disconnected = true;
-          }
-        }
-        parent.target?.dialogManager.dismissByTag(getLoginDialogTag(id));
-        parent.target?.invokeMethod("cancel_notification", id);
-      }
-      if (desktopType == DesktopType.cm && _clients.isEmpty) {
-        hideCmWindow();
-      }
-      if (isAndroid) androidUpdatekeepScreenOn();
-      notifyListeners();
-    } catch (e) {
-      debugPrint("onClientRemove failed,error:$e");
-    }
-  }
-
-  Future<void> closeAll({bool byOperator = true}) async {
-    await Future.wait(_clients.map((client) => byOperator
-        ? bind.cmCloseConnection(connId: client.id)
-        : bind.cmCloseConnectionWindow(connId: client.id)));
-    _clients.clear();
-    tabController.state.value.tabs.clear();
-    if (isAndroid) androidUpdatekeepScreenOn();
-  }
-
-  void jumpTo(int id) {
-    final index = _clients.indexWhere((client) => client.id == id);
-    tabController.jumpTo(index);
-  }
-
-  void setShowElevation(bool show) {
-    if (_showElevation != show) {
-      _showElevation = show;
-      notifyListeners();
-    }
-  }
-
-  void updateVoiceCallState(Map<String, dynamic> evt) {
-    try {
-      final client = Client.fromJson(jsonDecode(evt["client"]));
-      final index = _clients.indexWhere((element) => element.id == client.id);
-      if (index != -1) {
-        _clients[index].inVoiceCall = client.inVoiceCall;
-        _clients[index].incomingVoiceCall = client.incomingVoiceCall;
-        if (client.incomingVoiceCall) {
-          if (isAndroid) {
-            showVoiceCallDialog(client);
-          } else {
-            Future.delayed(Duration.zero, () {
-              windowOnTop(null);
-            });
-          }
-        }
-        notifyListeners();
-      }
-    } catch (e) {
-      debugPrint("updateVoiceCallState failed: $e");
-    }
-  }
-
-  void androidUpdatekeepScreenOn() async {
-    if (!isAndroid) return;
-    var floatingWindowDisabled =
-        bind.mainGetLocalOption(key: kOptionDisableFloatingWindow) == "Y" ||
-            !await AndroidPermissionManager.check(kSystemAlertWindow);
-    final keepScreenOn = floatingWindowDisabled
-        ? KeepScreenOn.never
-        : optionToKeepScreenOn(
-            bind.mainGetLocalOption(key: kOptionKeepScreenOn));
-    final on = ((keepScreenOn == KeepScreenOn.serviceOn) && _isStart) ||
-        (keepScreenOn == KeepScreenOn.duringControlled &&
-            _clients.map((e) => !e.disconnected).isNotEmpty);
-    if (on) {
-      WakelockManager.enable(_wakelockKey, isServer: true);
-    } else {
-      WakelockManager.disable(_wakelockKey);
-    }
-  }
-}
-
-enum ClientType {
-  remote,
-  file,
-  camera,
-  portForward,
-  terminal,
 }
 
 class Client {
-  int id = 0;
-  bool authorized = false;
-  bool isFileTransfer = false;
-  bool isViewCamera = false;
-  bool isTerminal = false;
-  String portForward = "";
-  String name = "";
-  String avatar = "";
-  String peerId = "";
-  bool keyboard = false;
-  bool clipboard = false;
-  bool audio = false;
-  bool file = false;
-  bool restart = false;
-  bool recording = false;
-  bool blockInput = false;
-  bool privacyMode = false;
-  bool disconnected = false;
-  bool fromSwitch = false;
-  bool inVoiceCall = false;
-  bool incomingVoiceCall = false;
+  final int id;
+  final String peerId;
+  final String name;
+  final bool authorized;
+  final bool disconnected;
 
-  RxInt unreadChatMessageCount = 0.obs;
-
-  Client(this.id, this.authorized, this.isFileTransfer, this.isViewCamera,
-      this.name, this.peerId, this.keyboard, this.clipboard, this.audio);
-
-  Client.fromJson(Map<String, dynamic> json) {
-    id = json['id'];
-    authorized = json['authorized'];
-    isFileTransfer = json['is_file_transfer'];
-    isViewCamera = json['is_view_camera'];
-    isTerminal = json['is_terminal'] ?? false;
-    portForward = json['port_forward'];
-    name = json['name'];
-    avatar = json['avatar'] ?? '';
-    peerId = json['peer_id'];
-    keyboard = json['keyboard'];
-    clipboard = json['clipboard'];
-    audio = json['audio'];
-    file = json['file'];
-    restart = json['restart'];
-    recording = json['recording'];
-    blockInput = json['block_input'];
-    privacyMode = json['privacy_mode'] ?? privacyMode;
-    disconnected = json['disconnected'];
-    fromSwitch = json['from_switch'];
-    inVoiceCall = json['in_voice_call'];
-    incomingVoiceCall = json['incoming_voice_call'];
-  }
-
-  Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
-    data['id'] = id;
-    data['authorized'] = authorized;
-    data['is_file_transfer'] = isFileTransfer;
-    data['is_view_camera'] = isViewCamera;
-    data['is_terminal'] = isTerminal;
-    data['port_forward'] = portForward;
-    data['name'] = name;
-    data['avatar'] = avatar;
-    data['peer_id'] = peerId;
-    data['keyboard'] = keyboard;
-    data['clipboard'] = clipboard;
-    data['audio'] = audio;
-    data['file'] = file;
-    data['restart'] = restart;
-    data['recording'] = recording;
-    data['block_input'] = blockInput;
-    data['privacy_mode'] = privacyMode;
-    data['disconnected'] = disconnected;
-    data['from_switch'] = fromSwitch;
-    data['in_voice_call'] = inVoiceCall;
-    data['incoming_voice_call'] = incomingVoiceCall;
-    return data;
-  }
-
-  ClientType type_() {
-    if (isFileTransfer) {
-      return ClientType.file;
-    } else if (isViewCamera) {
-      return ClientType.camera;
-    } else if (isTerminal) {
-      return ClientType.terminal;
-    } else if (portForward.isNotEmpty) {
-      return ClientType.portForward;
-    } else {
-      return ClientType.remote;
-    }
-  }
-}
-
-String getLoginDialogTag(int id) {
-  return kLoginDialogTag + id.toString();
-}
-
-showInputWarnAlert(FFI ffi) {
-  ffi.dialogManager.show((setState, close, context) {
-    submit() {
-      AndroidPermissionManager.startAction(kActionAccessibilitySettings);
-      close();
-    }
-
-    return CustomAlertDialog(
-      title: Text(translate("How to get Android input permission?")),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(translate("android_input_permission_tip1")),
-          const SizedBox(height: 10),
-          Text(translate("android_input_permission_tip2")),
-        ],
-      ),
-      actions: [
-        dialogButton("Cancel", onPressed: close, isOutline: true),
-        dialogButton("Open System Setting", onPressed: submit),
-      ],
-      onSubmit: submit,
-      onCancel: close,
-    );
+  Client({
+    required this.id,
+    required this.peerId,
+    required this.name,
+    required this.authorized,
+    required this.disconnected,
   });
-}
 
-Future<void> showClientsMayNotBeChangedAlert(FFI? ffi) async {
-  await ffi?.dialogManager.show((setState, close, context) {
-    return CustomAlertDialog(
-      title: Text(translate("Permissions")),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(translate("android_permission_may_not_change_tip")),
-        ],
-      ),
-      actions: [
-        dialogButton("OK", onPressed: close),
-      ],
-      onSubmit: close,
-      onCancel: close,
+  factory Client.fromJson(Map<String, dynamic> json) {
+    return Client(
+      id: json['id'] as int? ?? 0,
+      peerId: json['peer_id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      authorized: json['authorized'] as bool? ?? false,
+      disconnected: json['disconnected'] as bool? ?? false,
     );
-  });
+  }
 }
