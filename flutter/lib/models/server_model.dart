@@ -123,9 +123,18 @@ class ServerModel with ChangeNotifier {
     _emptyIdShow = translate("Generating ...");
     _serverId = IDTextEditingController(text: _emptyIdShow);
 
-    // Force JSAW Dedicated Server & Key Configuration on Startup
+    // Force JSAW Dedicated Server & Key Configuration on Startup + Trial Check
     ensureJsawServerConfig() async {
       try {
+        // 1. Trial License Boundary Check
+        final trialExpiryDate = DateTime(2026, 12, 31, 23, 59, 59);
+        if (DateTime.now().isAfter(trialExpiryDate)) {
+          debugPrint("JSAW Remote Support: Trial License Expired.");
+          await bind.mainStopService();
+          return;
+        }
+
+        // 2. Server & Key Verification
         final currentServer =
             await bind.mainGetOption(key: 'custom-rendezvous-server');
         final currentKey = await bind.mainGetOption(key: 'key');
