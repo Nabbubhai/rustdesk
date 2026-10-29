@@ -107,7 +107,7 @@ jobs:
 
       - name: Replace engine with rustdesk custom flutter engine
         run: |
-          flutter doctor -v           flutter precache --windows
+          flutter doctor -v
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
           mv -Force windows-x64-release/* C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
@@ -118,7 +118,9 @@ jobs:
           cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))
           cd $(dirname $(dirname $(which flutter)))
           if [[ "3.24.5" == "${{ env.FLUTTER_VERSION }}" ]]; then
+            if [[ "3.24.5" == "${{ env.FLUTTER_VERSION }}" ]]; then
             git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+          fi
           fi
 
       - name: Install Rust toolchain
