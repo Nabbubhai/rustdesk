@@ -143,7 +143,7 @@ void runMainApp(bool startService) async {
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
   runApp(App());
-
+  NrsLicense.check(); // NRS Heartbeat License check
   bool? alwaysOnTop;
   if (isDesktop) {
     alwaysOnTop =
