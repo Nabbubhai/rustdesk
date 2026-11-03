@@ -169,20 +169,34 @@ jobs:
           name: topmostwindow-artifacts-x64
           path: "./rustdesk"
 
-      - name: Pack Single Standalone JSAW-Remote-Support.exe
+      - name: Pack Standalone EXEs (Standard + UAE)
         shell: bash
         run: |
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
           mv ../../rustdesk/rustdesk.exe ../../rustdesk/JSAW-Remote-Support.exe
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/JSAW-Remote-Support.exe
-          popd
-          mkdir -p ./SignOutput
-          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/JSAW-Remote-Support.exe
 
-      - name: Upload Clean Standalone EXE
+          # === Standard build (India / default port 21116) ===
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/JSAW-Remote-Support.exe
+          mkdir -p ../../SignOutput
+          mv ../../target/release/rustdesk-portable-packer.exe ../../SignOutput/JSAW-Remote-Support.exe
+
+          # === UAE build (port 8443 - Etisalat/du compatible) ===
+          printf "host=nrs.jindalsaw.com:8443,key=2m83nfT5gUJel2M5O5mkaeQbnneq2bVkYhxovX5JZYg=" > ../../rustdesk/custom.txt
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/JSAW-Remote-Support.exe
+          mv ../../target/release/rustdesk-portable-packer.exe ../../SignOutput/JSAW-Remote-Support-UAE.exe
+
+          popd
+
+      - name: Upload Standard Standalone EXE
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: JSAW-Remote-Support-Windows-x86_64
           path: ./SignOutput/JSAW-Remote-Support.exe
+
+      - name: Upload UAE Standalone EXE
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: JSAW-Remote-Support-UAE-Windows-x86_64
+          path: ./SignOutput/JSAW-Remote-Support-UAE.exe
